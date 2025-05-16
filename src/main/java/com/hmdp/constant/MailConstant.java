@@ -9,7 +9,7 @@ package com.hmdp.constant;
  * @Author: jay
  * @Version: 1.0
  */
-public class MailContant {
+public class MailConstant {
     // 邮箱SMTP授权码
     public static final String SMTP_AUTHORIZATION_CODE = "iywckycckkykchda";
 }

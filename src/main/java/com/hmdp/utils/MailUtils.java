@@ -1,13 +1,9 @@
 package com.hmdp.utils;
 
-import com.hmdp.constant.MailContant;
+import com.hmdp.constant.MailConstant;
 
-import javax.mail.Authenticator;
-import javax.mail.PasswordAuthentication;
-import javax.mail.Session;
-import javax.mail.Transport;
-import javax.mail.internet.InternetAddress;
-import javax.mail.internet.MimeMessage;
+import javax.mail.*;
+import javax.mail.internet.*;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -21,74 +17,91 @@ import java.util.Properties;
  *
  * @Create: 2025/5/14 0:18
  * @Author: jay
- * @Version: 1.0
+ * @Version: 1.2
  */
 public class MailUtils {
-    public static void main(String[] args) {
-        sendTestMail("338272743@qq.com", achieveCode());
-    }
 
-    public static void sendTestMail(String mail, String code) {
-        //创建Properties类用于记录邮箱的一些属性
-        Properties props = new Properties();
-        //表示SMTP发送邮件，必须进行身份验证
-        props.put("mail.smtp.auth", "true");
-        //填写SMTP服务器地址
-        props.put("mail.smtp.host", "smtp.qq.com");
-        //端口号，QQ邮箱的端口587
-        props.put("mail.smtp.port", "587");
-        //设置写信人的账号
-        props.put("mail.user", "3383272743@qq.com");
-        //设置16位的SMTP口令
-        props.put("mail.password", MailContant.SMTP_AUTHORIZATION_CODE);
-        //构建授权信息，用于进行SMTP身份验证
+    /**
+     * 发送邮件
+     *
+     * @param mail 收件人邮箱
+     * @param code 验证码
+     * @throws MessagingException 如果发送邮件失败
+     */
+    public static void sendTestMail(String mail, String code) throws MessagingException {
+        // 创建 Properties 类用于记录邮箱属性
+        Properties props = getProperties();
+
+        // 设置发件人邮箱和授权码
+        String userName = "3383272743@qq.com"; // 发件人邮箱
+        String password = MailConstant.SMTP_AUTHORIZATION_CODE; // 授权码
+        // 构建授权信息
         Authenticator authenticator = new Authenticator() {
+            @Override
             protected PasswordAuthentication getPasswordAuthentication() {
-                //发件人邮箱
-                String userName = props.getProperty("mail.user");
-                //发件人邮箱授权码
-                String password = props.getProperty("mail.password");
-                //发件人邮箱和授权码
                 return new PasswordAuthentication(userName, password);
             }
         };
-        //使用环境属性和授权信息，创建邮件会话
+
+        // 创建邮件会话
         Session mailSession = Session.getInstance(props, authenticator);
-        //创建邮件消息
+        // 启用调试日志，便于排查问题
+        mailSession.setDebug(true);
+
+        // 创建邮件消息
         MimeMessage message = new MimeMessage(mailSession);
         // 设置发件人
+        message.setFrom(new InternetAddress(userName));
+        // 设置收件人
+        message.setRecipient(MimeMessage.RecipientType.TO, new InternetAddress(mail));
+        // 设置邮件标题
+        message.setSubject("邮箱验证码");
+        // 设置邮件内容
+        message.setContent("您的验证码是：<b>" + code + "</b> (有效期为一分钟，请勿告诉他人)", "text/html;charset=UTF-8");
+
+        // 发送邮件
+        Transport.send(message);
+    }
+
+    private static Properties getProperties() {
+        Properties props = new Properties();
+        props.put("mail.smtp.host", "smtp.qq.com"); // QQ 邮箱 SMTP 服务器
+        props.put("mail.smtp.port", "465"); // SSL 端口
+        props.put("mail.smtp.auth", "true"); // 启用认证
+        props.put("mail.smtp.ssl.enable", "true"); // 启用 SSL
+        props.put("mail.smtp.socketFactory.class", "javax.net.ssl.SSLSocketFactory"); // 使用 SSL Socket
+        props.put("mail.smtp.socketFactory.port", "465"); // 设置 SSL 端口
+        props.put("mail.smtp.ssl.protocols", "TLSv1.2 TLSv1.3"); // 显式指定 TLS 协议
+        return props;
+    }
+
+    /**
+     * 生成 6 位随机验证码（不包含易混淆字符 0, 1, O, l）
+     *
+     * @return 6 位验证码
+     */
+    public static String achieveCode() {
+        String[] chars = new String[]{"2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F",
+                "G", "H", "I", "J", "K", "L", "M", "N", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+                "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "m", "n", "p", "q", "r", "s", "t", "u", "v",
+                "w", "x", "y", "z"};
+        List<String> list = Arrays.asList(chars);
+        Collections.shuffle(list); // 随机打乱
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 6; i++) {
+            sb.append(list.get(i)); // 取前 6 位
+        }
+        return sb.toString();
+    }
+
+    public static void main(String[] args) {
         try {
-            InternetAddress form = new InternetAddress(props.getProperty("mail.user"));
-            message.setFrom(form);
-            //设置收件人
-            InternetAddress to = new InternetAddress("3383272743@qq.com");
-            message.setRecipient(MimeMessage.RecipientType.TO, to);
-            //设置邮件标题
-            message.setSubject("邮件测试");
-            //设置邮件内容
-            message.setContent("您的验证码是：" + code + "(有效期为一分钟，请勿告诉他人)", "text/html;charset=UTF-8");
-            //发送邮件
-            Transport.send(message);
-        } catch (Exception e) {
+            String code = achieveCode();
+            sendTestMail("3383272743@qq.com", code);
+            System.out.println("邮件发送成功，验证码: " + code);
+        } catch (MessagingException e) {
+            System.err.println("邮件发送失败: " + e.getMessage());
             e.printStackTrace();
         }
     }
-
-    public static String achieveCode() {  //由于数字 1 、 0 和字母 O 、l 有时分不清楚，所以，没有数字 1 、 0
-        String[] beforeShuffle = new String[]{"2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F",
-                "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "a",
-                "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v",
-                "w", "x", "y", "z"};
-        List<String> list = Arrays.asList(beforeShuffle);
-        //将数组转换为集合
-        Collections.shuffle(list);
-        //打乱集合顺序
-        StringBuilder sb = new StringBuilder();
-        for (String s : list) {
-            sb.append(s);
-            //将集合转化为字符串
-        }
-        return sb.substring(3, 8);
-    }
 }
-

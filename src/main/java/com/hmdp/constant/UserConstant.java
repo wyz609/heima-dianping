@@ -13,5 +13,6 @@ public class UserConstant {
     //验证码key前缀
     public static final String USER_LOGIN_CODE_KEY = "Verification_Code";
 
+    public static final String USER_LOGIN = "user";
 }
 
