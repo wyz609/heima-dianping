@@ -10,7 +10,7 @@ package com.hmdp.constant;
  * @Version: 1.0
  */
 
-public class RedisCOnstants {
+public class RedisConstants {
 
     public static final String LOGIN_CODE_KEY = "login:code:";
     public static final Long LOGIN_CODE_TTL = 2L;
@@ -24,6 +24,9 @@ public class RedisCOnstants {
 
     public static final String LOCK_SHOP_KEY = "lock:shop:";
     public static final Long LOCK_SHOP_TTL = 10L;
+    // Redis中缓存所有店铺类型信息的List集合的key
+    public static final String CACHE_SHOP_TYPE_KEY = "cache:shop:type";
+
 
     public static final String SECKILL_STOCK_KEY = "seckill:stock:";
     public static final String BLOG_LIKED_KEY = "blog:liked:";

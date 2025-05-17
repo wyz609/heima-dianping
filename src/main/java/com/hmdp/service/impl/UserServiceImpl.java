@@ -24,7 +24,7 @@ import java.util.HashMap;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import static com.hmdp.constant.RedisCOnstants.*;
+import static com.hmdp.constant.RedisConstants.*;
 
 /**
  * <p>
