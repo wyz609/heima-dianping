@@ -19,10 +19,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.function.Function;
 import static com.hmdp.utils.RedisConstants.CACHE_NULL_TTL;
 
@@ -42,7 +39,6 @@ import static com.hmdp.utils.RedisConstants.CACHE_NULL_TTL;
 public class RedisCacheHelper {
 
     private final StringRedisTemplate stringRedisTemplate;
-    private static final ExecutorService CACHE_REBUILD_EXECUTOR = Executors.newFixedThreadPool(10);
 
     // 使用构造注入，也可以使用自动注入
     public RedisCacheHelper(StringRedisTemplate stringRedisTemplate) {
@@ -50,29 +46,32 @@ public class RedisCacheHelper {
     }
 
     /**
-     * 方法一：将任意java对象序列化为json并存储在string类型的key中，并且可以设置TTL过期时间(为了双写一致兜底)
+     * 方法1：将任意Java对象序列化为json并存储在string类型的key中，并且可以设置TTL过期时间(为了**双写一致兜底**)
      * @param key key
      * @param value value
      * @param time TTL过期时间
      * @param unit TTL过期时间单位
      */
-    public void set(String key, Object value, Long time, TimeUnit unit){
+    public void set(String key, Object value, Long time, TimeUnit unit) {
         stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(value), time, unit);
     }
 
     /**
-     * 方法二：将任意java对象序列化为json并存储在String类型的key中，并且可以设置逻辑过期时间，用于处理缓存击穿问题
+     * 方法2：将任意Java对象序列化为json并存储在string类型的key中，并且可以设置**逻辑过期时间**，用于处理**缓存击穿**问题
      * @param key key
      * @param value value
      * @param expireTime TTL逻辑过期时间
      * @param unit TTL过期时间单位
      */
-    public void setWithLogicalExpire(String key, Object value,Long expireTime,TimeUnit unit){
-        RedisData<Object> redisData = new RedisData<>();
+    public void setWithLogicalExpire(String key, Object value, Long expireTime, TimeUnit unit) {
+        //设置逻辑过期时间
+        RedisData redisData = new RedisData();
         redisData.setData(value);
         redisData.setExpireTime(LocalDateTime.now().plusSeconds(unit.toSeconds(expireTime)));
-        stringRedisTemplate.opsForValue().set(key,JSONUtil.toJsonStr(redisData));
+        //写入redis
+        stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(redisData));
     }
+
     /**
      * 方法3：根据指定的key查询缓存，并反序列化为指定类型，利用缓存空值的方式解决**缓存穿透**问题
      * 非热点数据，一般情况下使用，解决缓存穿透即可
@@ -86,35 +85,51 @@ public class RedisCacheHelper {
      * @param <R> 查询对象类型
      * @param <ID> 查询对象id的类型
      */
-    public <R,ID>R queryWithPassThrough(String keyPrefix, ID id, Class<R> type, Function<ID,R> dbFallback,Long time,TimeUnit unit){
+    public <R, ID> R queryWithPassThrough(String keyPrefix, ID id, Class<R> type, Function<ID, R> dbFallback,
+                                          Long time, TimeUnit unit) {
         String key = keyPrefix + id;
-
-        // 1.从redis中查询商铺缓存
+        // 1 从redis查询商铺缓存
         String json = stringRedisTemplate.opsForValue().get(key);
-        // 2.判断是否存在
-        if (StrUtil.isNotBlank(json)){
-            // 3.存在，则直接返回
-            return JSONUtil.toBean(json,type);
+        // 2 判断是否存在
+        if (StrUtil.isNotBlank(json)) {
+            // 3 存在，直接返回
+            return JSONUtil.toBean(json, type);
         }
-        // isNotBlank()方法会检测到空字符串, 为解决缓存穿透问题，额外判断是否为空字符串，是则返回null
-        if(json != null){
+        /**
+         * isNotBlank()方法会检测到空字符串
+         * 为解决缓存穿透，额外判断是否为""空字符串，是则返回null
+         */
+        if (json != null) {
             return null;
         }
 
-        // 4.如果不存在， 则根据id查询数据库
+        // 4 不存在，根据id查询数据库
         R r = dbFallback.apply(id);
-        if(r == null){
-            // 为解决缓存穿透问题，将空值写入redis中，2分钟后过期(可自己修改过期时间)
-            stringRedisTemplate.opsForValue().set(key,"",CACHE_NULL_TTL,TimeUnit.MINUTES);
-            // 返回空值
+        // 5 数据库不存在，返回错误
+        if (r == null) {
+            /**
+             * 为解决缓存穿透，将空值写入redis，2分钟后过期（可自己修改）
+             */
+            stringRedisTemplate.opsForValue().set(key, "", 2L, TimeUnit.MINUTES);
+            //返回空值
             return null;
         }
-        // 5.数据库中也不存在，则返回错误
-        // 6.如果数据库中存在，则写入redis中
-        this.set(key,r,time,unit);
-        // 7.返回商铺数据
+        // 6 存在，写入redis
+        this.set(key, r, time, unit);
+        // 7 存在，返回数据
         return r;
     }
+
+    //自定义线程池，用于queryWithLogicalExpire方法，可根据自己需求更改
+    private static final ExecutorService CACHE_REBUILD_EXECUTOR = new ThreadPoolExecutor(
+            3,
+            7,
+            3L,
+            TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(4),
+            Executors.defaultThreadFactory(),
+            new ThreadPoolExecutor.AbortPolicy());
+
     /**
      * 方法4：根据指定的key查询缓存，并反序列化为指定类型，需要利用逻辑过期解决**缓存击穿**问题
      * 热点数据，使用逻辑过期解决缓存击穿问题
@@ -130,55 +145,60 @@ public class RedisCacheHelper {
      * @param <R> 查询对象类型
      * @param <ID> 查询对象id的类型
      */
-    public <R,ID> R querWithLogicalExpire(String keyPrefix,ID id,Class<R> type,Function<ID,R> dbFallback,
-                                          Long time,TimeUnit unit, String lockKeyPrefix){
+    public <R, ID> R queryWithLogicalExpire(String keyPrefix, ID id, Class<R> type, Function<ID, R> dbFallback,
+                                            Long time, TimeUnit unit, String lockKeyPrefix) {
         String key = keyPrefix + id;
-        // 1.从redis中查询商铺缓存
+        // 1 从redis查询商铺缓存
         String json = stringRedisTemplate.opsForValue().get(key);
-        // 判断是否存在
-        if(StrUtil.isNotBlank(json)){
-            // 如果不存在，直接返回null
+        // TODO 2 判断是否存在
+        if (StrUtil.isBlank(json)) {
+            // 3 不存在，直接返回null
             return null;
         }
-        // 命中， 需要把json反序列化为对象
+
+        // TODO 4 命中，需要把json反序列化为对象
         RedisData redisData = JSONUtil.toBean(json, RedisData.class);
         JSONObject jsonObject = (JSONObject) redisData.getData();
         R r = JSONUtil.toBean(jsonObject, type);
         LocalDateTime expireTime = redisData.getExpireTime();
-        // 判断是否过期
-        if(expireTime.isAfter(LocalDateTime.now())){
-            // 未过期， 则直接返回查询对象信息
+        // TODO 5 判断是否过期
+        if (expireTime.isAfter(LocalDateTime.now())) {
+            // TODO 5.1 未过期，直接返回查询对象信息
             return r;
         }
-        // 已过期，需要缓存重建
-        // 缓存重建
-        // 获取互斥锁
+        // TODO 5.2 已过期，需要缓存重建
+        // TODO 6 缓存重建
+        // TODO 6.1 获取互斥锁
         String lockKey = lockKeyPrefix + id;
         boolean isLock = this.tryLock(lockKey);
-        if(isLock){
-            // 可以在这里再进行一个double check， 如果reids缓存依旧是过期的， 才进行缓存重建
+        // TODO 6.2 判断是否获取锁成功
+        if (isLock) {
+            // TODO 可以在这里再进行一个double check，如果redis缓存依旧是过期的，才进行缓存重建
             String jsonAgain = stringRedisTemplate.opsForValue().get(key);
-            RedisData redisDataAgin = JSONUtil.toBean(jsonAgain, RedisData.class);
-            JSONObject jsonObjectAgain = (JSONObject) redisDataAgin.getData();
+            RedisData redisDataAgain = JSONUtil.toBean(jsonAgain, RedisData.class);
+            JSONObject jsonObjectAgain = (JSONObject) redisDataAgain.getData();
             R rAgain = JSONUtil.toBean(jsonObjectAgain, type);
-            LocalDateTime expireTimeAgain = redisDataAgin.getExpireTime();
-            if(expireTimeAgain.isAfter(LocalDateTime.now())){
+            LocalDateTime expireTimeAgain = redisDataAgain.getExpireTime();
+            if (expireTimeAgain.isAfter(LocalDateTime.now())) {
                 this.unlock(lockKey);
                 return rAgain;
             }
-            // 成功的话， 开启独立线程， 实现缓存重建
-            CompletableFuture.runAsync(()->{
-                try{
+            // TODO 6.3 成功，开启独立线程，实现缓存重建你
+            CompletableFuture.runAsync(() -> {
+                try {
+                    //查询数据库
                     R r2 = dbFallback.apply(id);
-                    this.setWithLogicalExpire(key,r2,time,unit);
-                }catch (Exception e){
+                    //写入redis，带逻辑过期时间
+                    this.setWithLogicalExpire(key, r2, time, unit);
+                } catch (Exception e) {
                     throw new RuntimeException(e);
-                }finally {
+                } finally {
+                    // TODO 释放互斥锁
                     this.unlock(lockKey);
                 }
-            },CACHE_REBUILD_EXECUTOR);
+            }, CACHE_REBUILD_EXECUTOR);
         }
-        // 未获取到锁， 直接返回商铺信息
+        // TODO 6.4 无论成功或失败，返回过期的对象信息
         return r;
     }
 

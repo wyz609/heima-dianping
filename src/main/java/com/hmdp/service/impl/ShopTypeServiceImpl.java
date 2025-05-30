@@ -36,7 +36,7 @@ public class ShopTypeServiceImpl extends ServiceImpl<ShopTypeMapper, ShopType> i
         // 先从Redis中查询，这里的常量值是固定前缀+店铺id
         List<String> shopTypes = stringRedisTemplate.opsForList().range(CACHE_SHOP_TYPE_KEY, 0, -1);
         // 如果不为空(查询到了)，则转为ShopType类型返回
-        if(shopTypes != null){
+        if(!shopTypes.isEmpty()){
             List<ShopType> tmp = new ArrayList<>();
             for(String types :shopTypes ){
                 ShopType shopType = JSONUtil.toBean(types, ShopType.class);
@@ -57,6 +57,7 @@ public class ShopTypeServiceImpl extends ServiceImpl<ShopTypeMapper, ShopType> i
         }
         stringRedisTemplate.opsForList().leftPushAll(CACHE_SHOP_TYPE_KEY, shopTypes);
         // 最终把查询到的商铺分类信息返回给前端
+        System.out.println("shopTypeList = "+shopTypeList);
         return Result.ok(shopTypeList);
     }
 

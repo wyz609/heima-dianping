@@ -29,6 +29,7 @@ public class ShopTypeController {
     public Result queryTypeList() {
 //        List<ShopType> typeList = typeService
 //                .query().orderByAsc("sort").list();
+//        System.out.println("typeList = "+typeList);
 //        return Result.ok(typeList);
 
         return typeService.queryList();
